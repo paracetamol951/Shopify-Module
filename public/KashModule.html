@@ -7,8 +7,33 @@
     <meta name="description" content="Kash.click Shopify module synchronizes customers, products, departments, variants and stock with your POS. Review changes before applying them and centralize sales from Shopify, PrestaShop, WooCommerce and more." />
     <meta name="keywords" content="logiciel de caisse shopify conforme, Shopify POS integration, compliant Shopify cash register software, POS inventory sync, Shopify stock management" />
     <meta name="robots" content="index,follow" />
-    <meta name="shopify-api-key" content="9c1212a6904f78cd7d142cd2938ed09d">
+
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const shop = params.get("shop");
+
+        if (shop) {
+            const config = document.createElement("script");
+            config.type = "shopify/config";
+            config.textContent = JSON.stringify({
+                apiKey: "9c1212a6904f78cd7d142cd2938ed09d",
+                shop: shop
+            });
+            document.head.appendChild(config);
+        }
+    </script>
+
     <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
+    <script>
+        window.addEventListener("DOMContentLoaded", () => {
+            const params = new URLSearchParams(window.location.search);
+            const shop = params.get("shop");
+
+            if (!shop) {
+                console.warn("Shopify shop parameter missing");
+            }
+        });
+    </script>
     <style>
         :root {
             --primary: #0f7cff;
