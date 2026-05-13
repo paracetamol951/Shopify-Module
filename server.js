@@ -204,7 +204,6 @@ function requireProxyKey(req, res, next) {
 function verifyOAuthHmac(req) {
     const params = new URLSearchParams(req.originalUrl.split("?")[1] || "");
 
-    console.log("----- OAUTH HMAC DEBUG -----");
     const hmac = params.get("hmac");
     if (!hmac) return false;
 
@@ -221,15 +220,7 @@ function verifyOAuthHmac(req) {
         .update(message, "utf8")
         .digest("hex");
 
-    console.log("originalUrl:", req.originalUrl);
-    console.log("message:", message);
-    console.log("received hmac:", hmac);
-    console.log("computed hmac:", digest);
-    console.log("secret length:", SHOPIFY_CLIENT_SECRET.length);
-    console.log("----------------------------");
-    console.log("client id:", SHOPIFY_CLIENT_ID);
-    console.log("secret length:", SHOPIFY_CLIENT_SECRET);
-
+    
     if (digest.length !== hmac.length) return false;
 
     return crypto.timingSafeEqual(
