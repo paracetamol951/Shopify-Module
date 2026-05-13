@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Shopify POS Integration | Compliant Shopify Cash Register Software | Kash.click</title>
+    <meta name="description" content="Kash.click Shopify module synchronizes customers, products, departments, variants and stock with your POS. Review changes before applying them and centralize sales from Shopify, PrestaShop, WooCommerce and more." />
+    <meta name="keywords" content="logiciel de caisse shopify conforme, Shopify POS integration, compliant Shopify cash register software, POS inventory sync, Shopify stock management" />
+    <meta name="robots" content="index,follow" />
+    <style>
+        :root {
+            --primary: #0f7cff;
+            --primary-2: #4f46e5;
+            --primary-dark: #075bc2;
+            --accent: #00b894;
+            --accent-2: #22d3ee;
+            --ink: #101828;
+            --muted: #667085;
+            --soft: #f3f7fb;
+            --line: rgba(196, 211, 229, .68);
+            --card: rgba(255,255,255,.86);
+            --shadow: 0 28px 80px rgba(16,24,40,.14);
+            --shadow-soft: 0 16px 42px rgba(16,24,40,.10);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            min-height: 100%;
+            margin: 0;
+        }
+
+        body {
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            color: var(--ink);
+            background: radial-gradient(circle at 16% 20%, rgba(0,184,148,.16), transparent 28%), radial-gradient(circle at 82% 8%, rgba(15,124,255,.18), transparent 32%), linear-gradient(180deg, #fbfdff 0%, #f3f7fb 100%);
+            overflow: hidden;
+        }
+
+        a {
+            color: inherit;
+        }
+
+        .page {
+            min-height: 100svh;
+            display: grid;
+            grid-template-rows: auto 1fr;
+            padding: clamp(16px, 3vw, 32px);
+            gap: clamp(14px, 2vw, 24px);
+            position: relative;
+            isolation: isolate;
+        }
+
+            .page::before {
+                content: "";
+                position: fixed;
+                inset: 0;
+                pointer-events: none;
+                background-image: linear-gradient(rgba(15,124,255,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(15,124,255,.045) 1px, transparent 1px);
+                background-size: 44px 44px;
+                mask-image: radial-gradient(circle at 50% 30%, #000 0%, transparent 72%);
+                z-index: -1;
+            }
+
+        header, main {
+            max-width: 1180px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            font-weight: 900;
+            letter-spacing: -.04em;
+            font-size: 1.2rem;
+        }
+
+        .logo {
+            width: 40px;
+            height: 40px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            box-shadow: 0 12px 26px rgba(15,124,255,.26);
+            display: grid;
+            place-items: center;
+            color: #fff;
+            font-weight: 950;
+        }
+
+        nav {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            color: var(--muted);
+            font-size: .94rem;
+            font-weight: 650;
+        }
+
+        .nav-cta {
+            color: var(--primary-dark);
+            text-decoration: none;
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: rgba(255,255,255,.72);
+            border: 1px solid var(--line);
+            box-shadow: 0 8px 22px rgba(16,24,40,.06);
+        }
+
+        main {
+            display: grid;
+            grid-template-columns: 1.02fr .98fr;
+            align-items: center;
+            gap: clamp(22px, 4vw, 56px);
+            min-height: 0;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: rgba(255,255,255,.72);
+            color: var(--primary-dark);
+            font-size: .84rem;
+            font-weight: 850;
+            box-shadow: 0 12px 28px rgba(16,24,40,.06);
+            margin-bottom: 18px;
+            backdrop-filter: blur(14px);
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 99px;
+            background: var(--accent);
+            box-shadow: 0 0 0 6px rgba(0,184,148,.12);
+        }
+
+        h1 {
+            margin: 0;
+            max-width: 720px;
+            font-size: clamp(2.1rem, 5vw, 4.35rem);
+            line-height: .94;
+            letter-spacing: -.075em;
+        }
+
+            h1 span {
+                background: linear-gradient(135deg, var(--primary), var(--primary-2), var(--accent));
+                -webkit-background-clip: text;
+                background-clip: text;
+                color: transparent;
+            }
+
+        .lead {
+            max-width: 660px;
+            margin: 18px 0 22px;
+            color: var(--muted);
+            font-size: clamp(1rem, 1.55vw, 1.16rem);
+            line-height: 1.55;
+        }
+
+        .actions {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .btn {
+            min-height: 50px;
+            border-radius: 16px;
+            padding: 14px 20px;
+            font-weight: 900;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+            transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+        }
+
+            .btn:hover {
+                transform: translateY(-2px);
+            }
+
+            .btn.primary {
+                color: white;
+                background: linear-gradient(135deg, var(--primary), var(--primary-2));
+                box-shadow: 0 18px 34px rgba(15,124,255,.26);
+            }
+
+            .btn.secondary {
+                color: var(--ink);
+                background: rgba(255,255,255,.78);
+                border: 1px solid var(--line);
+                box-shadow: 0 14px 30px rgba(16,24,40,.06);
+            }
+
+        .proof {
+            color: var(--muted);
+            font-size: .9rem;
+            margin-top: 14px;
+            max-width: 620px;
+        }
+
+        .visual {
+            position: relative;
+            min-height: 474px;
+            display: grid;
+            place-items: center;
+        }
+
+        .orb {
+            position: absolute;
+            width: 260px;
+            height: 260px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(15,124,255,.18), rgba(0,184,148,.18));
+            filter: blur(12px);
+            z-index: -1;
+            transform: translate(64px, -42px);
+        }
+
+        .panel {
+            width: min(100%, 520px);
+            border-radius: 34px;
+            background: var(--card);
+            border: 1px solid rgba(255,255,255,.74);
+            box-shadow: var(--shadow);
+            padding: 20px;
+            backdrop-filter: blur(20px);
+            position: relative;
+            overflow: hidden;
+        }
+
+            .panel::before {
+                content: "";
+                position: absolute;
+                inset: 0 0 auto;
+                height: 4px;
+                background: linear-gradient(90deg, var(--primary), var(--accent), var(--primary-2));
+            }
+
+        .panel-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .panel-title {
+            font-weight: 950;
+            letter-spacing: -.04em;
+            font-size: 1.04rem;
+        }
+
+        .status {
+            color: #027a48;
+            background: rgba(0,184,148,.13);
+            padding: 8px 11px;
+            border-radius: 999px;
+            font-size: .76rem;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .review {
+            display: grid;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 12px;
+            align-items: center;
+            padding: 12px;
+            border-radius: 20px;
+            border: 1px solid var(--line);
+            background: rgba(255,255,255,.72);
+            box-shadow: 0 10px 24px rgba(16,24,40,.045);
+        }
+
+        .icon {
+            width: 38px;
+            height: 38px;
+            border-radius: 14px;
+            display: grid;
+            place-items: center;
+            background: linear-gradient(135deg, rgba(15,124,255,.12), rgba(34,211,238,.14));
+            color: var(--primary-dark);
+            font-weight: 950;
+        }
+
+        .row b {
+            display: block;
+            font-size: .93rem;
+            letter-spacing: -.02em;
+        }
+
+        .row small {
+            color: var(--muted);
+        }
+
+        .tag {
+            font-size: .78rem;
+            font-weight: 950;
+            color: var(--primary-dark);
+            background: rgba(15,124,255,.08);
+            padding: 6px 8px;
+            border-radius: 999px;
+        }
+
+        .sync-bar {
+            height: 10px;
+            border-radius: 99px;
+            background: #e9f1fa;
+            overflow: hidden;
+            box-shadow: inset 0 1px 2px rgba(16,24,40,.06);
+        }
+
+            .sync-bar i {
+                display: block;
+                height: 100%;
+                width: 78%;
+                border-radius: inherit;
+                background: linear-gradient(90deg, var(--primary), var(--accent));
+            }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .mini {
+            min-height: 76px;
+            padding: 13px;
+            border-radius: 20px;
+            background: rgba(248,251,255,.86);
+            border: 1px solid var(--line);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+            .mini b {
+                display: block;
+                font-size: 1.18rem;
+                letter-spacing: -.04em;
+            }
+
+            .mini small {
+                color: var(--muted);
+            }
+
+        .features {
+            position: absolute;
+            left: 50%;
+            bottom: 0;
+            width: min(100%, 520px);
+            transform: translate(-50%, 42%);
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .feature-card {
+            min-height: 92px;
+            padding: 14px;
+            border-radius: 22px;
+            color: #fff;
+            background: linear-gradient(135deg, rgba(16,24,40,.96), rgba(31,44,64,.94)), radial-gradient(circle at 20% 0%, rgba(15,124,255,.35), transparent 36%);
+            border: 1px solid rgba(255,255,255,.12);
+            box-shadow: var(--shadow-soft);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 8px;
+            transition: transform .2s ease, box-shadow .2s ease;
+        }
+
+            .feature-card:hover {
+                transform: translateY(-4px);
+                box-shadow: 0 24px 54px rgba(16,24,40,.18);
+            }
+
+            .feature-card strong {
+                display: block;
+                font-size: .9rem;
+                line-height: 1.1;
+                letter-spacing: -.025em;
+            }
+
+            .feature-card span {
+                color: rgba(255,255,255,.72);
+                font-size: .74rem;
+                line-height: 1.25;
+            }
+
+        .feature-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 10px;
+            display: grid;
+            place-items: center;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            font-size: .78rem;
+            font-weight: 950;
+            flex: 0 0 auto;
+        }
+
+        @media (max-width: 900px) {
+            body {
+                overflow: auto;
+            }
+
+            .page {
+                min-height: 100svh;
+                padding: 16px;
+            }
+
+            nav {
+                display: none;
+            }
+
+            main {
+                grid-template-columns: 1fr;
+                gap: 16px;
+                align-content: center;
+            }
+
+            .lead {
+                margin: 14px 0 18px;
+            }
+
+            .visual {
+                min-height: auto;
+                padding-bottom: 0;
+            }
+
+            .panel {
+                border-radius: 26px;
+                padding: 14px;
+            }
+
+            .features {
+                position: static;
+                transform: none;
+                width: 100%;
+                margin-top: 12px;
+                grid-template-columns: 1fr;
+            }
+
+            .feature-card {
+                min-height: auto;
+                flex-direction: row;
+                align-items: center;
+                justify-content: flex-start;
+            }
+
+            .cards {
+                grid-template-columns: repeat(3,1fr);
+            }
+
+            .mini {
+                min-height: 64px;
+                padding: 10px;
+            }
+
+                .mini small {
+                    font-size: .72rem;
+                }
+        }
+
+        @media (max-height: 760px) and (min-width: 901px) {
+            h1 {
+                font-size: clamp(2rem, 4.25vw, 3.45rem);
+            }
+
+            .lead {
+                margin: 12px 0 16px;
+                line-height: 1.45;
+            }
+
+            .visual {
+                min-height: 410px;
+            }
+
+            .row {
+                padding: 9px;
+            }
+
+            .cards {
+                display: none;
+            }
+
+            .features {
+                transform: translate(-50%, 36%);
+            }
+
+            .feature-card {
+                min-height: 78px;
+                padding: 12px;
+            }
+        }
+
+        @media (max-width: 520px) {
+            h1 {
+                letter-spacing: -.055em;
+            }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .cards {
+                display: none;
+            }
+
+            .panel-top {
+                align-items: flex-start;
+            }
+
+            .row {
+                grid-template-columns: auto 1fr;
+            }
+
+            .tag {
+                grid-column: 2;
+                width: fit-content;
+            }
+        }
+
+        .logoC {
+            width: 24px;
+            height: 24px;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <header aria-label="Kash.click header">
+            <div class="brand"><img src="/assets/img/LogoCaisse.svg" class="inline logoC" alt="Logo POS Software"> Kash.click</div>
+            <nav aria-label="Main navigation">
+                <span>POS</span>
+                <span>Inventory</span>
+                <span>Marketing</span>
+                <a class="nav-cta" href="https://kash.click" target="_blank">Start for free →</a>
+            </nav>
+        </header>
+
+        <main>
+            <section class="hero" aria-labelledby="main-title">
+                <div class="eyebrow"><span class="dot" aria-hidden="true"></span> Shopify module for Kash.click POS</div>
+                <h1 id="main-title">Compliant Shopify cash register software, <span>fully synchronized.</span></h1>
+                <p class="lead">Connect Shopify to Kash.click and keep customers, products, departments, variants and stock aligned with your point of sale. Review every change before applying it.</p>
+                <div class="actions">
+                    <a class="btn primary" href="https://kash.click" target="_blank">Connect Shopify →</a>
+                    <a class="btn secondary" href="https://kash.click" target="_blank">See the workflow</a>
+                </div>
+                <div class="proof">Centralize sales from Shopify, PrestaShop, WooCommerce and other channels in one clean POS inventory system.</div>
+            </section>
+
+            <section class="visual" aria-label="Synchronization review preview">
+                <div class="orb" aria-hidden="true"></div>
+
+                <div class="panel">
+                    <div class="panel-top">
+                        <div class="panel-title">Review before sync</div>
+                        <div class="status">Ready to apply</div>
+                    </div>
+
+                    <div class="review">
+                        <div class="row"><div class="icon">C</div><div><b>Customers</b><small>New profiles and loyalty data</small></div><div class="tag">+128</div></div>
+                        <div class="row"><div class="icon">P</div><div><b>Products & variants</b><small>Prices, SKUs, taxes and options</small></div><div class="tag">+342</div></div>
+                        <div class="row"><div class="icon">S</div><div><b>Stock movements</b><small>Unified inventory across channels</small></div><div class="tag">Live</div></div>
+                    </div>
+
+                    <div class="sync-bar" aria-hidden="true"><i></i></div>
+
+                    <div class="cards" aria-label="Key benefits">
+                        <div class="mini"><b>1</b><small>POS database</small></div>
+                        <div class="mini"><b>All</b><small>sales channels</small></div>
+                        <div class="mini"><b>0</b><small>blind updates</small></div>
+                    </div>
+                </div>
+
+                <div class="features" aria-label="Marketing features">
+                    <div class="feature-card">
+                        <div class="feature-icon">L</div>
+                        <div><strong>Customer loyalty</strong><span>Reward repeat buyers from every channel.</span></div>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">M</div>
+                        <div><strong>Targeted campaigns</strong><span>Segment shoppers using real POS data.</span></div>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">R</div>
+                        <div><strong>Unified reporting</strong><span>Track Shopify, store and web sales together.</span></div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+</body>
+</html>
