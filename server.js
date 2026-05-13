@@ -164,6 +164,7 @@ function requireProxyKey(req, res, next) {
 function verifyOAuthHmac(req) {
     const params = new URLSearchParams(req.originalUrl.split("?")[1] || "");
 
+    console.log("----- OAUTH HMAC DEBUG -----");
     const hmac = params.get("hmac");
     if (!hmac) return false;
 
@@ -180,7 +181,6 @@ function verifyOAuthHmac(req) {
         .update(message, "utf8")
         .digest("hex");
 
-    console.log("----- OAUTH HMAC DEBUG -----");
     console.log("originalUrl:", req.originalUrl);
     console.log("message:", message);
     console.log("received hmac:", hmac);
