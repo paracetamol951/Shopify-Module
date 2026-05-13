@@ -386,6 +386,7 @@ app.get("/auth/start", (req, res) => {
 
     res.redirect(`https://${shop}/admin/oauth/authorize?${params.toString()}`);
 });
+
 async function registerPrivacyWebhooks(shop, token) {
     const webhooks = [
         {
@@ -446,6 +447,15 @@ async function createWebhook(shop, token, topic, callbackUrl) {
     const result = data.webhookSubscriptionCreate;
 
     if (result.userErrors.length) {
+        const alreadyExists = result.userErrors.some((err) =>
+            String(err.message || "").includes("already been taken")
+        );
+
+        if (alreadyExists) {
+            console.log(`Webhook already exists: ${topic} -> ${callbackUrl}`);
+            return null;
+        }
+
         throw new Error(JSON.stringify(result.userErrors));
     }
 
@@ -507,10 +517,10 @@ app.get("/auth/callback", async (req, res) => {
             tokenJson.expires_in,
             tokenJson.refresh_token_expires_in
         );
-        await registerPrivacyWebhooks(
+        /*await registerPrivacyWebhooks(
             shop,
             tokenJson.access_token
-        );
+        );*/
         const redirectUrl = new URL(process.env.END_OPERATION_REDIRECT);
         res.redirect(redirectUrl.toString());
         //END_OPERATION_REDIRECT
