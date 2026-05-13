@@ -187,6 +187,8 @@ function verifyOAuthHmac(req) {
     console.log("computed hmac:", digest);
     console.log("secret length:", SHOPIFY_CLIENT_SECRET.length);
     console.log("----------------------------");
+    console.log("client id:", SHOPIFY_CLIENT_ID);
+    console.log("secret length:", SHOPIFY_CLIENT_SECRET);
 
     if (digest.length !== hmac.length) return false;
 
