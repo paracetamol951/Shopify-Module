@@ -685,5 +685,23 @@
 
         })();
     </script>
+    <script>
+        window.addEventListener("DOMContentLoaded", async () => {
+            try {
+                const response = await fetch("/api/session-check", {
+                    headers: {
+                        "Accept": "application/json"
+                    }
+                });
+
+                const json = await response.json();
+
+                console.log("Shopify session check:", json);
+
+            } catch (e) {
+                console.error("Session token check failed:", e);
+            }
+        });
+    </script>
 </body>
 </html>

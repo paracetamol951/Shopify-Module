@@ -1,7 +1,42 @@
 import express from "express";
 import crypto from "crypto";
 import dotenv from "dotenv";
+import jwt from "jsonwebtoken";
 
+function verifyShopifySessionToken(req, res, next) {
+    const auth = req.header("Authorization") || "";
+
+    if (!auth.startsWith("Bearer ")) {
+        return res.status(401).json({ error: "Missing session token" });
+    }
+
+    const token = auth.slice("Bearer ".length);
+
+    try {
+        const decoded = jwt.verify(token, SHOPIFY_CLIENT_SECRET, {
+            algorithms: ["HS256"],
+            audience: SHOPIFY_CLIENT_ID
+        });
+
+        if (!decoded.dest || !/^https:\/\/[a-z0-9][a-z0-9-]*\.myshopify\.com$/i.test(decoded.dest)) {
+            return res.status(401).json({ error: "Invalid shop destination" });
+        }
+
+        req.shopifySession = {
+            shop: decoded.dest.replace("https://", ""),
+            userId: decoded.sub,
+            sessionId: decoded.sid
+        };
+
+        next();
+
+    } catch (e) {
+        return res.status(401).json({
+            error: "Invalid session token",
+            message: e.message
+        });
+    }
+}
 dotenv.config();
 
 function verifyShopifyWebhookHmac(req) {
@@ -68,7 +103,12 @@ app.get("/", (req, res) => {
         root: "public"
     });
 });
-
+app.get("/api/session-check", verifyShopifySessionToken, (req, res) => {
+    res.json({
+        ok: true,
+        shop: req.shopifySession.shop
+    });
+});
 // Webhooks Shopify privacy/GDPR
 app.post(
     "/webhooks/shopify/privacy",
