@@ -24,9 +24,7 @@ use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
-  "http://caisses/auth/callback",
-  "https://kash.click/auth/callback",
-  "https://e638-91-174-2-62.ngrok-free.app/auth/callback"
+  "https://kash-opify.kash.click/auth/callback"
 ]
 
 [pos]

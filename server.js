@@ -161,7 +161,38 @@ function requireProxyKey(req, res, next) {
     }
     next();
 }
+function verifyOAuthHmac(req) {
+    const url = new URL(req.originalUrl, PUBLIC_BASE_URL);
+    const params = new URLSearchParams(url.search);
 
+    const hmac = params.get("hmac");
+
+    if (!hmac) return false;
+
+    params.delete("hmac");
+    params.delete("signature");
+
+    const message = Array.from(params.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, value]) => `${key}=${value}`)
+        .join("&");
+
+    const digest = crypto
+        .createHmac("sha256", SHOPIFY_CLIENT_SECRET)
+        .update(message)
+        .digest("hex");
+
+    return safeCompareHex(digest, hmac);
+}
+
+function safeCompareHex(a, b) {
+    const aBuffer = Buffer.from(a, "hex");
+    const bBuffer = Buffer.from(b, "hex");
+
+    if (aBuffer.length !== bBuffer.length) return false;
+
+    return crypto.timingSafeEqual(aBuffer, bBuffer);
+}
 function verifyHmac(query) {
     const params = { ...query };
     const hmac = params.hmac;
@@ -336,7 +367,10 @@ app.get("/auth/callback", async (req, res) => {
             return res.status(400).send("Paramètres OAuth invalides");
         }
 
-        if (!verifyHmac(req.query)) {
+        /*if (!verifyHmac(req.query)) {
+            return res.status(400).send("HMAC invalide");
+        }*/
+        if (!verifyOAuthHmac(req)) {
             return res.status(400).send("HMAC invalide");
         }
 
