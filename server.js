@@ -198,40 +198,17 @@ function verifyOAuthHmac(req) {
     );
 }
 
-function safeCompareHex(a, b) {
-    const aBuffer = Buffer.from(a, "hex");
-    const bBuffer = Buffer.from(b, "hex");
+async function saveTokenInPhp(
+    kashShopId,
+    shop,
+    accessToken,
+    scope,
+    refreshToken,
+    expiresIn,
+    refreshTokenExpiresIn
+) {
+    const now = Date.now();
 
-    if (aBuffer.length !== bBuffer.length) return false;
-
-    return crypto.timingSafeEqual(aBuffer, bBuffer);
-}
-function verifyHmac(query) {
-    const params = { ...query };
-    const hmac = params.hmac;
-
-    if (!hmac) return false;
-
-    delete params.hmac;
-    delete params.signature;
-
-    const message = Object.keys(params)
-        .sort()
-        .map((key) => `${key}=${params[key]}`)
-        .join("&");
-
-    const digest = crypto
-        .createHmac("sha256", SHOPIFY_CLIENT_SECRET)
-        .update(message)
-        .digest("hex");
-
-    return crypto.timingSafeEqual(
-        Buffer.from(digest, "utf8"),
-        Buffer.from(hmac, "utf8")
-    );
-}
-
-async function saveTokenInPhp(kashShopId, shop, accessToken, scope) {
     const resp = await fetch(PHP_SAVE_TOKEN_URL, {
         method: "POST",
         headers: {
@@ -242,13 +219,16 @@ async function saveTokenInPhp(kashShopId, shop, accessToken, scope) {
             kash_shop_id: kashShopId,
             shop,
             access_token: accessToken,
+            refresh_token: refreshToken,
             scope,
+            expires_at: new Date(now + expiresIn * 1000).toISOString(),
+            refresh_token_expires_at: new Date(now + refreshTokenExpiresIn * 1000).toISOString(),
             installed_at: new Date().toISOString()
         })
     });
 
     const text = await resp.text();
-    console.log(text);
+
     if (!resp.ok) {
         throw new Error("PHP save token failed: " + text);
     }
@@ -273,7 +253,78 @@ async function getTokenFromPhp(kashShopId) {
 
     return JSON.parse(text);
 }
+async function refreshShopifyToken(shop, refreshToken) {
+    const params = new URLSearchParams({
+        client_id: SHOPIFY_CLIENT_ID,
+        client_secret: SHOPIFY_CLIENT_SECRET,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken
+    });
 
+    const resp = await fetch(`https://${shop}/admin/oauth/access_token`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json"
+        },
+        body: params.toString()
+    });
+
+    const json = await resp.json();
+
+    if (!resp.ok || !json.access_token) {
+        throw new Error("Shopify token refresh failed: " + JSON.stringify(json));
+    }
+
+    return json;
+}
+async function getValidTokenFromPhp(kashShopId) {
+    const tokenData = await getTokenFromPhp(kashShopId);
+
+    if (!tokenData || !tokenData.access_token || !tokenData.shop) {
+        return null;
+    }
+
+    const expiresAt = tokenData.expires_at
+        ? new Date(tokenData.expires_at).getTime()
+        : 0;
+
+    const shouldRefresh = !expiresAt || Date.now() > expiresAt - 5 * 60 * 1000;
+
+    if (!shouldRefresh) {
+        return tokenData;
+    }
+
+    if (!tokenData.refresh_token) {
+        throw new Error("Refresh token manquant, reconnecte la boutique Shopify");
+    }
+
+    const refreshed = await refreshShopifyToken(
+        tokenData.shop,
+        tokenData.refresh_token
+    );
+
+    const now = Date.now();
+
+    await saveTokenInPhp(
+        tokenData.kash_shop_id || kashShopId,
+        tokenData.shop,
+        refreshed.access_token,
+        refreshed.scope || tokenData.scope,
+        refreshed.refresh_token,
+        refreshed.expires_in,
+        refreshed.refresh_token_expires_in
+    );
+
+    return {
+        ...tokenData,
+        access_token: refreshed.access_token,
+        refresh_token: refreshed.refresh_token,
+        scope: refreshed.scope || tokenData.scope,
+        expires_at: new Date(now + refreshed.expires_in * 1000).toISOString(),
+        refresh_token_expires_at: new Date(now + refreshed.refresh_token_expires_in * 1000).toISOString()
+    };
+}
 // Démarrage OAuth
 app.get("/auth/start", (req, res) => {
     const shop = String(req.query.shop || "").toLowerCase().trim();
@@ -395,16 +446,20 @@ app.get("/auth/callback", async (req, res) => {
 
         oauthStates.delete(state);
 
+        const tokenParams = new URLSearchParams({
+            client_id: SHOPIFY_CLIENT_ID,
+            client_secret: SHOPIFY_CLIENT_SECRET,
+            code,
+            expiring: "1"
+        });
+
         const tokenResp = await fetch(`https://${shop}/admin/oauth/access_token`, {
             method: "POST",
             headers: {
-                "Content-Type": "application/json"
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "application/json"
             },
-            body: JSON.stringify({
-                client_id: SHOPIFY_CLIENT_ID,
-                client_secret: SHOPIFY_CLIENT_SECRET,
-                code
-            })
+            body: tokenParams.toString()
         });
 
         const tokenJson = await tokenResp.json();
@@ -412,12 +467,14 @@ app.get("/auth/callback", async (req, res) => {
         if (!tokenResp.ok || !tokenJson.access_token) {
             return res.status(500).send("Erreur récupération token Shopify");
         }
-
         await saveTokenInPhp(
             savedState.kash_shop_id,
             shop,
             tokenJson.access_token,
-            tokenJson.scope
+            tokenJson.scope,
+            tokenJson.refresh_token,
+            tokenJson.expires_in,
+            tokenJson.refresh_token_expires_in
         );
         await registerPrivacyWebhooks(
             shop,
@@ -447,7 +504,7 @@ app.get("/api/products", requireProxyKey, async (req, res) => {
             return res.status(400).json({ error: "kash_shop_id invalide" });
         }
 
-        const tokenData = await getTokenFromPhp(kashShopId);
+        const tokenData = await getValidTokenFromPhp(kashShopId);
 
         if (!tokenData || !tokenData.access_token || !tokenData.kash_shop_id) {
             return res.status(401).json({
@@ -735,7 +792,7 @@ app.get("/api/customers", requireProxyKey, async (req, res) => {
             return res.status(400).json({ error: "kash_shop_id invalide" });
         }
 
-        const tokenData = await getTokenFromPhp(kashShopId);
+        const tokenData = await getValidTokenFromPhp(kashShopId);
 
         if (!tokenData || !tokenData.access_token || !tokenData.shop) {
             return res.status(401).json({
