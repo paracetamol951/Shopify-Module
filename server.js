@@ -162,11 +162,9 @@ function requireProxyKey(req, res, next) {
     next();
 }
 function verifyOAuthHmac(req) {
-    const url = new URL(req.originalUrl, PUBLIC_BASE_URL);
-    const params = new URLSearchParams(url.search);
+    const params = new URLSearchParams(req.originalUrl.split("?")[1] || "");
 
     const hmac = params.get("hmac");
-
     if (!hmac) return false;
 
     params.delete("hmac");
@@ -178,11 +176,24 @@ function verifyOAuthHmac(req) {
         .join("&");
 
     const digest = crypto
-        .createHmac("sha256", SHOPIFY_CLIENT_SECRET)
-        .update(message)
+        .createHmac("sha256", SHOPIFY_CLIENT_SECRET.trim())
+        .update(message, "utf8")
         .digest("hex");
 
-    return safeCompareHex(digest, hmac);
+    console.log("----- OAUTH HMAC DEBUG -----");
+    console.log("originalUrl:", req.originalUrl);
+    console.log("message:", message);
+    console.log("received hmac:", hmac);
+    console.log("computed hmac:", digest);
+    console.log("secret length:", SHOPIFY_CLIENT_SECRET.length);
+    console.log("----------------------------");
+
+    if (digest.length !== hmac.length) return false;
+
+    return crypto.timingSafeEqual(
+        Buffer.from(digest, "utf8"),
+        Buffer.from(hmac, "utf8")
+    );
 }
 
 function safeCompareHex(a, b) {
