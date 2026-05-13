@@ -647,5 +647,43 @@
             </section>
         </main>
     </div>
+    <script>
+        (() => {
+
+            const params = new URLSearchParams(window.location.search);
+            const shop = params.get("shop");
+
+            if (!shop) {
+                console.warn("Missing Shopify shop parameter");
+                return;
+            }
+
+            // Tous les liens vers kash.click
+            const links = document.querySelectorAll('a[href^="https://kash.click"]');
+
+            links.forEach(link => {
+
+                try {
+
+                    const url = new URL(link.href);
+
+                    // Ajoute le shop
+                    url.searchParams.set("shop", shop);
+
+                    // Optionnel : ajouter source
+                    url.searchParams.set("source", "shopify_app");
+
+                    link.href = url.toString();
+
+                } catch (e) {
+                    console.error("Invalid URL", e);
+                }
+
+            });
+
+            console.log("Shop propagated to Kash.click links:", shop);
+
+        })();
+    </script>
 </body>
 </html>
