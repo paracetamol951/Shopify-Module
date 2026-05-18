@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "852b3d24bc55a226aaf0cc8ed9b465d7"
-name = "Kash.click"
+name = "Kash Private app"
 application_url = "https://kash-opify.kash.click"
 embedded = true
 
@@ -18,13 +18,12 @@ api_version = "2026-01"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_products,read_customers"
+scopes = "read_customers,read_inventory,read_orders,read_products"
 use_legacy_install_flow = false
+optional_scopes = [ ]
 
 [auth]
-redirect_urls = [
-  "https://kash-opify.kash.click/auth/callback"
-]
+redirect_urls = [ "https://kash-opify.kash.click/auth/callback" ]
 
 [pos]
 embedded = true
