@@ -1,6 +1,6 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "9c1212a6904f78cd7d142cd2938ed09d"
+client_id = "852b3d24bc55a226aaf0cc8ed9b465d7"
 name = "Kash.click"
 application_url = "https://kash-opify.kash.click"
 embedded = true
