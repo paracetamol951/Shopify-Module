@@ -284,6 +284,7 @@ async function getTokenFromPhp(kashShopId) {
 
     return JSON.parse(text);
 }
+/*
 async function refreshShopifyToken(shop, refreshToken) {
     const params = new URLSearchParams({
         client_id: SHOPIFY_CLIENT_ID,
@@ -472,9 +473,6 @@ app.get("/auth/callback", async (req, res) => {
             return res.status(400).send("Paramètres OAuth invalides");
         }
 
-        /*if (!verifyHmac(req.query)) {
-            return res.status(400).send("HMAC invalide");
-        }*/
         if (!verifyOAuthHmac(req)) {
             return res.status(400).send("HMAC invalide");
         }
@@ -517,25 +515,16 @@ app.get("/auth/callback", async (req, res) => {
             tokenJson.expires_in,
             tokenJson.refresh_token_expires_in
         );
-        /*await registerPrivacyWebhooks(
-            shop,
-            tokenJson.access_token
-        );*/
         const redirectUrl = new URL(process.env.END_OPERATION_REDIRECT);
         res.redirect(redirectUrl.toString());
         //END_OPERATION_REDIRECT
-        /*res.send(`
-      <h1>Boutique connectée</h1>
-      <p>${shop} est maintenant connectée.</p>
-      <p>Le token a été enregistré par ton code PHP.</p>
-    `);*/
 
     } catch (e) {
         console.error(e);
         res.status(500).send(e.message);
     }
 });
-
+*/
 // Endpoint appelé par ton logiciel PHP pour récupérer les produits
 app.get("/api/products", requireProxyKey, async (req, res) => {
     try {
@@ -545,7 +534,7 @@ app.get("/api/products", requireProxyKey, async (req, res) => {
             return res.status(400).json({ error: "kash_shop_id invalide" });
         }
 
-        const tokenData = await getValidTokenFromPhp(kashShopId);
+        const tokenData = await getTokenFromPhp(kashShopId);
 
         if (!tokenData || !tokenData.access_token || !tokenData.kash_shop_id) {
             return res.status(401).json({
@@ -833,7 +822,7 @@ app.get("/api/customers", requireProxyKey, async (req, res) => {
             return res.status(400).json({ error: "kash_shop_id invalide" });
         }
 
-        const tokenData = await getValidTokenFromPhp(kashShopId);
+        const tokenData = await getTokenFromPhp(kashShopId);
 
         if (!tokenData || !tokenData.access_token || !tokenData.shop) {
             return res.status(401).json({
