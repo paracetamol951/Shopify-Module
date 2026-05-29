@@ -185,86 +185,14 @@ const API_VERSION = process.env.API_VERSION || "2026-01";
 
 const PROXY_KEY = process.env.PROXY_KEY;
 const INTERNAL_KEY = process.env.INTERNAL_KEY;
-const PHP_SAVE_TOKEN_URL = process.env.PHP_SAVE_TOKEN_URL;
 const PHP_GET_TOKEN_URL = process.env.PHP_GET_TOKEN_URL;
 
-// Stock temporaire uniquement pour les states OAuth
-const oauthStates = new Map();
-
-function isValidShop(shop) {
-    return /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i.test(shop);
-}
 
 function requireProxyKey(req, res, next) {
     if (req.header("X-Proxy-Key") !== PROXY_KEY) {
         return res.status(401).json({ error: "Unauthorized" });
     }
     next();
-}
-function verifyOAuthHmac(req) {
-    const params = new URLSearchParams(req.originalUrl.split("?")[1] || "");
-
-    const hmac = params.get("hmac");
-    if (!hmac) return false;
-
-    params.delete("hmac");
-    params.delete("signature");
-
-    const message = Array.from(params.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, value]) => `${key}=${value}`)
-        .join("&");
-
-    const digest = crypto
-        .createHmac("sha256", SHOPIFY_CLIENT_SECRET.trim())
-        .update(message, "utf8")
-        .digest("hex");
-
-    
-    if (digest.length !== hmac.length) return false;
-
-    return crypto.timingSafeEqual(
-        Buffer.from(digest, "utf8"),
-        Buffer.from(hmac, "utf8")
-    );
-}
-
-async function saveTokenInPhp(
-    kashShopId,
-    shop,
-    accessToken,
-    scope,
-    refreshToken,
-    expiresIn,
-    refreshTokenExpiresIn
-) {
-    const now = Date.now();
-
-    const resp = await fetch(PHP_SAVE_TOKEN_URL, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "X-Internal-Key": INTERNAL_KEY
-        },
-        body: JSON.stringify({
-            kash_shop_id: kashShopId,
-            shop,
-            access_token: accessToken,
-            refresh_token: refreshToken,
-            scope,
-            expires_at: new Date(now + expiresIn * 1000).toISOString(),
-            refresh_token_expires_at: new Date(now + refreshTokenExpiresIn * 1000).toISOString(),
-            installed_at: new Date().toISOString()
-        })
-    });
-
-    const text = await resp.text();
-
-    if (!resp.ok) {
-        throw new Error("PHP save token failed: " + text);
-    }
-
-    return JSON.parse(text);
 }
 async function getTokenFromPhp(kashShopId) {
     const url = PHP_GET_TOKEN_URL + "?kash_shop_id=" + encodeURIComponent(kashShopId);
@@ -284,247 +212,7 @@ async function getTokenFromPhp(kashShopId) {
 
     return JSON.parse(text);
 }
-/*
-async function refreshShopifyToken(shop, refreshToken) {
-    const params = new URLSearchParams({
-        client_id: SHOPIFY_CLIENT_ID,
-        client_secret: SHOPIFY_CLIENT_SECRET,
-        grant_type: "refresh_token",
-        refresh_token: refreshToken
-    });
 
-    const resp = await fetch(`https://${shop}/admin/oauth/access_token`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Accept": "application/json"
-        },
-        body: params.toString()
-    });
-
-    const json = await resp.json();
-
-    if (!resp.ok || !json.access_token) {
-        throw new Error("Shopify token refresh failed: " + JSON.stringify(json));
-    }
-
-    return json;
-}
-async function getValidTokenFromPhp(kashShopId) {
-    const tokenData = await getTokenFromPhp(kashShopId);
-
-    if (!tokenData || !tokenData.access_token || !tokenData.shop) {
-        return null;
-    }
-
-    const expiresAt = tokenData.expires_at
-        ? new Date(tokenData.expires_at).getTime()
-        : 0;
-
-    const shouldRefresh = !expiresAt || Date.now() > expiresAt - 5 * 60 * 1000;
-
-    if (!shouldRefresh) {
-        return tokenData;
-    }
-
-    if (!tokenData.refresh_token) {
-        throw new Error("Refresh token manquant, reconnecte la boutique Shopify");
-    }
-
-    const refreshed = await refreshShopifyToken(
-        tokenData.shop,
-        tokenData.refresh_token
-    );
-
-    const now = Date.now();
-
-    await saveTokenInPhp(
-        tokenData.kash_shop_id || kashShopId,
-        tokenData.shop,
-        refreshed.access_token,
-        refreshed.scope || tokenData.scope,
-        refreshed.refresh_token,
-        refreshed.expires_in,
-        refreshed.refresh_token_expires_in
-    );
-
-    return {
-        ...tokenData,
-        access_token: refreshed.access_token,
-        refresh_token: refreshed.refresh_token,
-        scope: refreshed.scope || tokenData.scope,
-        expires_at: new Date(now + refreshed.expires_in * 1000).toISOString(),
-        refresh_token_expires_at: new Date(now + refreshed.refresh_token_expires_in * 1000).toISOString()
-    };
-}
-// Démarrage OAuth
-app.get("/auth/start", (req, res) => {
-    const shop = String(req.query.shop || "").toLowerCase().trim();
-    const kashShopId = String(req.query.kash_shop_id || "").trim();
-
-    if (!isValidShop(shop)) {
-        return res.status(400).send("Shop invalide");
-    }
-
-    if (!/^[0-9]+$/.test(kashShopId)) {
-        return res.status(400).send("kash_shop_id invalide");
-    }
-
-    const state = crypto.randomBytes(32).toString("hex");
-
-    oauthStates.set(state, {
-        shop,
-        kash_shop_id: kashShopId,
-        createdAt: Date.now()
-    });
-
-    const params = new URLSearchParams({
-        client_id: SHOPIFY_CLIENT_ID,
-        scope: SCOPES,
-        redirect_uri: `${PUBLIC_BASE_URL}/auth/callback`,
-        state
-    });
-
-    res.redirect(`https://${shop}/admin/oauth/authorize?${params.toString()}`);
-});
-
-async function registerPrivacyWebhooks(shop, token) {
-    const webhooks = [
-        {
-            topic: "APP_UNINSTALLED",
-            uri: `${PUBLIC_BASE_URL}/webhooks/app/uninstalled`
-        }
-    ];
-
-    for (const webhook of webhooks) {
-        await createWebhook(
-            shop,
-            token,
-            webhook.topic,
-            webhook.uri
-        );
-    }
-}
-async function createWebhook(shop, token, topic, callbackUrl) {
-    const query = `
-        mutation webhookSubscriptionCreate(
-            $topic: WebhookSubscriptionTopic!,
-            $webhookSubscription: WebhookSubscriptionInput!
-        ) {
-            webhookSubscriptionCreate(
-                topic: $topic,
-                webhookSubscription: $webhookSubscription
-            ) {
-                webhookSubscription {
-                    id
-                    topic
-                    endpoint {
-                        __typename
-                    }
-                }
-                userErrors {
-                    field
-                    message
-                }
-            }
-        }
-    `;
-
-    const variables = {
-        topic,
-        webhookSubscription: {
-            callbackUrl,
-            format: "JSON"
-        }
-    };
-
-    const data = await shopifyGraphQL(
-        shop,
-        token,
-        query,
-        variables
-    );
-
-    const result = data.webhookSubscriptionCreate;
-
-    if (result.userErrors.length) {
-        const alreadyExists = result.userErrors.some((err) =>
-            String(err.message || "").includes("already been taken")
-        );
-
-        if (alreadyExists) {
-            console.log(`Webhook already exists: ${topic} -> ${callbackUrl}`);
-            return null;
-        }
-
-        throw new Error(JSON.stringify(result.userErrors));
-    }
-
-    return result.webhookSubscription;
-}
-// Callback OAuth
-app.get("/auth/callback", async (req, res) => {
-    try {
-        const shop = String(req.query.shop || "").toLowerCase().trim();
-        const code = String(req.query.code || "");
-        const state = String(req.query.state || "");
-
-        if (!isValidShop(shop) || !code || !state) {
-            return res.status(400).send("Paramètres OAuth invalides");
-        }
-
-        if (!verifyOAuthHmac(req)) {
-            return res.status(400).send("HMAC invalide");
-        }
-
-        const savedState = oauthStates.get(state);
-
-        if (!savedState || savedState.shop !== shop) {
-            return res.status(400).send("State invalide ou expiré");
-        }
-
-        oauthStates.delete(state);
-
-        const tokenParams = new URLSearchParams({
-            client_id: SHOPIFY_CLIENT_ID,
-            client_secret: SHOPIFY_CLIENT_SECRET,
-            code,
-            expiring: "1"
-        });
-
-        const tokenResp = await fetch(`https://${shop}/admin/oauth/access_token`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Accept": "application/json"
-            },
-            body: tokenParams.toString()
-        });
-
-        const tokenJson = await tokenResp.json();
-
-        if (!tokenResp.ok || !tokenJson.access_token) {
-            return res.status(500).send("Erreur récupération token Shopify");
-        }
-        await saveTokenInPhp(
-            savedState.kash_shop_id,
-            shop,
-            tokenJson.access_token,
-            tokenJson.scope,
-            tokenJson.refresh_token,
-            tokenJson.expires_in,
-            tokenJson.refresh_token_expires_in
-        );
-        const redirectUrl = new URL(process.env.END_OPERATION_REDIRECT);
-        res.redirect(redirectUrl.toString());
-        //END_OPERATION_REDIRECT
-
-    } catch (e) {
-        console.error(e);
-        res.status(500).send(e.message);
-    }
-});
-*/
 // Endpoint appelé par ton logiciel PHP pour récupérer les produits
 app.get("/api/products", requireProxyKey, async (req, res) => {
     try {
@@ -542,7 +230,6 @@ app.get("/api/products", requireProxyKey, async (req, res) => {
                 connect_url: `${PUBLIC_BASE_URL}/auth/start`
             });
         }
-
         const products = await getProducts(
             tokenData.shop,
             tokenData.access_token
@@ -559,7 +246,23 @@ app.get("/api/products", requireProxyKey, async (req, res) => {
         res.status(500).json({ error: e.message });
     }
 });
+app.get("/api/shop-test", requireProxyKey, async (req, res) => {
+    try {
+        console.log('shoptest');
+        const kashShopId = String(req.query.kash_shop_id || "").trim();
+        const tokenData = await getTokenFromPhp(kashShopId);
 
+        const data = await shopifyGraphQL(
+            tokenData.shop,
+            tokenData.access_token,
+            `{ shop { name myshopifyDomain } }`
+        );
+
+        res.json({ ok: true, shop: data.shop });
+    } catch (e) {
+        res.status(500).json({ ok: false, error: e.message });
+    }
+});
 async function shopifyGraphQL(shop, token, query, variables = {}) {
     const response = await fetch(
         `https://${shop}/admin/api/${API_VERSION}/graphql.json`,
