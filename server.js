@@ -1,8 +1,30 @@
-import express from "express";
+ï»¿import express from "express";
 import crypto from "crypto";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 
+async function getShopifyCredentials(kashShopId) {
+    const tokenData = await getTokenFromPhp(kashShopId);
+    if (!tokenData) return null;
+
+    console.log('getShopifyCredentials', tokenData);
+    if (
+        tokenData &&
+        tokenData.install_mode === "merchant_app" &&
+        tokenData.client_id &&
+        tokenData.client_secret
+    ) {
+        return {
+            client_id: tokenData.client_id,
+            client_secret: tokenData.client_secret
+        };
+    }
+
+    return {
+        client_id: '',
+        client_secret: ''
+    };
+}
 function verifyShopifySessionToken(req, res, next) {
     const auth = req.header("Authorization") || "";
 
@@ -79,18 +101,18 @@ async function callPhpPrivacyAction(action, payload) {
 }
 
 async function handleCustomerDataRequest(payload) {
-    // Demande d’accès aux données client.
-    // Tu dois préparer/exporter les données que Kash possède sur ce client.
+    // Demande dâ€™accÃ¨s aux donnÃ©es client.
+    // Tu dois prÃ©parer/exporter les donnÃ©es que Kash possÃ¨de sur ce client.
     return callPhpPrivacyAction("customers_data_request", payload);
 }
 
 async function handleCustomerRedact(payload) {
-    // Suppression/anonymisation des données client.
+    // Suppression/anonymisation des donnÃ©es client.
     return callPhpPrivacyAction("customers_redact", payload);
 }
 
 async function handleShopRedact(payload) {
-    // Suppression des données liées à la boutique après désinstallation.
+    // Suppression des donnÃ©es liÃ©es Ã  la boutique aprÃ¨s dÃ©sinstallation.
     return callPhpPrivacyAction("shop_redact", payload);
 }
 
@@ -178,16 +200,349 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
-const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID;
-const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
+//const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID;
+//const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
 const SCOPES = process.env.SCOPES || "read_products";
 const API_VERSION = process.env.API_VERSION || "2026-01";
 
 const PROXY_KEY = process.env.PROXY_KEY;
 const INTERNAL_KEY = process.env.INTERNAL_KEY;
+const PHP_SAVE_TOKEN_URL = process.env.PHP_SAVE_TOKEN_URL;
 const PHP_GET_TOKEN_URL = process.env.PHP_GET_TOKEN_URL;
 
+// Stock temporaire uniquement pour les states OAuth
+const oauthStates = new Map();
 
+function verifyOAuthHmac(req, clientSecret) {
+    const params = new URLSearchParams(req.originalUrl.split("?")[1] || "");
+    const hmac = params.get("hmac");
+
+    if (!hmac) return false;
+
+    params.delete("hmac");
+    params.delete("signature");
+
+    const message = Array.from(params.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, value]) => `${key}=${value}`)
+        .join("&");
+
+    const digest = crypto
+        .createHmac("sha256", clientSecret.trim())
+        .update(message, "utf8")
+        .digest("hex");
+
+    if (digest.length !== hmac.length) return false;
+
+    return crypto.timingSafeEqual(
+        Buffer.from(digest, "utf8"),
+        Buffer.from(hmac, "utf8")
+    );
+}
+
+async function saveTokenInPhp(
+    kashShopId,
+    shop,
+    accessToken,
+    scope,
+    refreshToken,
+    expiresIn,
+    refreshTokenExpiresIn
+) {
+    const now = Date.now();
+
+    const resp = await fetch(PHP_SAVE_TOKEN_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-Internal-Key": INTERNAL_KEY
+        },
+        body: JSON.stringify({
+            kash_shop_id: kashShopId,
+            shop,
+            access_token: accessToken,
+            refresh_token: refreshToken,
+            scope,
+            expires_at: new Date(now + expiresIn * 1000).toISOString(),
+            refresh_token_expires_at: new Date(now + refreshTokenExpiresIn * 1000).toISOString(),
+            installed_at: new Date().toISOString()
+        })
+    });
+
+    const text = await resp.text();
+    console.log('qs advsdf', text);
+
+    if (!resp.ok) {
+        throw new Error("PHP save token failed: " + text);
+    }
+
+    return JSON.parse(text);
+}
+async function refreshShopifyToken(shop, refreshToken, clientId, clientSecret) {
+    const params = new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken
+    });
+
+    const resp = await fetch(`https://${shop}/admin/oauth/access_token`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json"
+        },
+        body: params.toString()
+    });
+
+    const json = await resp.json();
+
+    if (!resp.ok || !json.access_token) {
+        throw new Error("Shopify token refresh failed: " + JSON.stringify(json));
+    }
+
+    return json;
+}
+
+async function getValidTokenFromPhp(kashShopId) {
+    const tokenData = await getTokenFromPhp(kashShopId);
+
+    if (!tokenData || !tokenData.access_token || !tokenData.shop) {
+        return null;
+    }
+
+    const expiresAt = tokenData.expires_at
+        ? new Date(tokenData.expires_at).getTime()
+        : 0;
+
+    const shouldRefresh = !expiresAt || Date.now() > expiresAt - 5 * 60 * 1000;
+
+    if (!shouldRefresh) {
+        return tokenData;
+    }
+
+    if (!tokenData.refresh_token) {
+        throw new Error("Refresh token manquant, reconnecte la boutique Shopify");
+    }
+
+    const credentials = await getShopifyCredentials(kashShopId);
+
+    if (!credentials) return null;
+
+    const refreshed = await refreshShopifyToken(
+        tokenData.shop,
+        tokenData.refresh_token,
+        credentials.client_id,
+        credentials.client_secret
+    );
+    /*
+    const refreshed = await refreshShopifyToken(
+        tokenData.shop,
+        tokenData.refresh_token
+    );*/
+
+    const now = Date.now();
+
+    await saveTokenInPhp(
+        tokenData.kash_shop_id || kashShopId,
+        tokenData.shop,
+        refreshed.access_token,
+        refreshed.scope || tokenData.scope,
+        refreshed.refresh_token,
+        refreshed.expires_in,
+        refreshed.refresh_token_expires_in
+    );
+
+    return {
+        ...tokenData,
+        access_token: refreshed.access_token,
+        refresh_token: refreshed.refresh_token,
+        scope: refreshed.scope || tokenData.scope,
+        expires_at: new Date(now + refreshed.expires_in * 1000).toISOString(),
+        refresh_token_expires_at: new Date(now + refreshed.refresh_token_expires_in * 1000).toISOString()
+    };
+}
+
+
+app.get("/auth/start", async (req, res) => {
+    const shop = String(req.query.shop || "").toLowerCase().trim();
+    const kashShopId = String(req.query.kash_shop_id || "").trim();
+
+    if (!isValidShop(shop)) {
+        return res.status(400).send("Shop invalide");
+    }
+
+    if (!/^[0-9]+$/.test(kashShopId)) {
+        return res.status(400).send("kash_shop_id invalide");
+    }
+
+    const credentials = await getShopifyCredentials(kashShopId);
+
+    if (!credentials.client_id || !credentials.client_secret) {
+        return res.status(400).send("Identifiants Shopify manquants");
+    }
+
+    const state = crypto.randomBytes(32).toString("hex");
+
+    oauthStates.set(state, {
+        shop,
+        kash_shop_id: kashShopId,
+        client_id: credentials.client_id,
+        client_secret: credentials.client_secret,
+        createdAt: Date.now()
+    });
+
+    const params = new URLSearchParams({
+        client_id: credentials.client_id,
+        scope: SCOPES,
+        redirect_uri: `${PUBLIC_BASE_URL}/auth/callback`,
+        state
+    });
+
+    res.redirect(`https://${shop}/admin/oauth/authorize?${params.toString()}`);
+});
+
+
+async function registerPrivacyWebhooks(shop, token) {
+    const webhooks = [
+        {
+            topic: "APP_UNINSTALLED",
+            uri: `${PUBLIC_BASE_URL}/webhooks/app/uninstalled`
+        }
+    ];
+
+    for (const webhook of webhooks) {
+        await createWebhook(
+            shop,
+            token,
+            webhook.topic,
+            webhook.uri
+        );
+    }
+}
+async function createWebhook(shop, token, topic, callbackUrl) {
+    const query = `
+        mutation webhookSubscriptionCreate(
+            $topic: WebhookSubscriptionTopic!,
+            $webhookSubscription: WebhookSubscriptionInput!
+        ) {
+            webhookSubscriptionCreate(
+                topic: $topic,
+                webhookSubscription: $webhookSubscription
+            ) {
+                webhookSubscription {
+                    id
+                    topic
+                    endpoint {
+                        __typename
+                    }
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+    `;
+
+    const variables = {
+        topic,
+        webhookSubscription: {
+            callbackUrl,
+            format: "JSON"
+        }
+    };
+
+    const data = await shopifyGraphQL(
+        shop,
+        token,
+        query,
+        variables
+    );
+
+    const result = data.webhookSubscriptionCreate;
+
+    if (result.userErrors.length) {
+        const alreadyExists = result.userErrors.some((err) =>
+            String(err.message || "").includes("already been taken")
+        );
+
+        if (alreadyExists) {
+            console.log(`Webhook already exists: ${topic} -> ${callbackUrl}`);
+            return null;
+        }
+
+        throw new Error(JSON.stringify(result.userErrors));
+    }
+
+    return result.webhookSubscription;
+}
+// Callback OAuth
+app.get("/auth/callback", async (req, res) => {
+    try {
+        const shop = String(req.query.shop || "").toLowerCase().trim();
+        const code = String(req.query.code || "");
+        const state = String(req.query.state || "");
+
+        if (!isValidShop(shop) || !code || !state) {
+            return res.status(400).send("Paramï¿½tres OAuth invalides");
+        }
+
+        const savedState = oauthStates.get(state);
+
+        if (!savedState || savedState.shop !== shop) {
+            return res.status(400).send("State invalide ou expirÃ©");
+        }
+
+        if (!verifyOAuthHmac(req, savedState.client_secret)) {
+            return res.status(400).send("HMAC invalide");
+        }
+
+        oauthStates.delete(state);
+
+        const tokenParams = new URLSearchParams({
+            client_id: savedState.client_id,
+            client_secret: savedState.client_secret,
+            code,
+            expiring: "1"
+        });
+
+        const tokenResp = await fetch(`https://${shop}/admin/oauth/access_token`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "application/json"
+            },
+            body: tokenParams.toString()
+        });
+
+        const tokenJson = await tokenResp.json();
+
+        if (!tokenResp.ok || !tokenJson.access_token) {
+            return res.status(500).send("Erreur rï¿½cupï¿½ration token Shopify");
+        }
+        await saveTokenInPhp(
+            savedState.kash_shop_id,
+            shop,
+            tokenJson.access_token,
+            tokenJson.scope,
+            tokenJson.refresh_token,
+            tokenJson.expires_in,
+            tokenJson.refresh_token_expires_in
+        );
+        const redirectUrl = new URL(process.env.END_OPERATION_REDIRECT);
+        res.redirect(redirectUrl.toString());
+        //END_OPERATION_REDIRECT
+
+    } catch (e) {
+        console.error(e);
+        res.status(500).send(e.message);
+    }
+});
+
+function isValidShop(shop) {
+    return /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i.test(shop);
+}
 function requireProxyKey(req, res, next) {
     if (req.header("X-Proxy-Key") !== PROXY_KEY) {
         return res.status(401).json({ error: "Unauthorized" });
@@ -204,16 +559,16 @@ async function getTokenFromPhp(kashShopId) {
     });
 
     const text = await resp.text();
-
+    console.log('getTokenFromPhp', text,resp);
     if (!resp.ok) {
-        throw new Error("PHP get token failed: " + text);
+        return null;// throw new Error("PHP get token failed: " + text);
     }
     //console.log(text);
 
     return JSON.parse(text);
 }
 
-// Endpoint appelé par ton logiciel PHP pour récupérer les produits
+// Endpoint appelÃ© par ton logiciel PHP pour rÃ©cupÃ©rer les produits
 app.get("/api/products", requireProxyKey, async (req, res) => {
     try {
         const kashShopId = String(req.query.kash_shop_id || "").trim();
@@ -222,11 +577,11 @@ app.get("/api/products", requireProxyKey, async (req, res) => {
             return res.status(400).json({ error: "kash_shop_id invalide" });
         }
 
-        const tokenData = await getTokenFromPhp(kashShopId);
+        const tokenData = await getValidTokenFromPhp(kashShopId);
 
         if (!tokenData || !tokenData.access_token || !tokenData.kash_shop_id) {
             return res.status(401).json({
-                error: "Boutique non connectée",
+                error: "Boutique non connectÃ©e",
                 connect_url: `${PUBLIC_BASE_URL}/auth/start`
             });
         }
@@ -250,7 +605,7 @@ app.get("/api/shop-test", requireProxyKey, async (req, res) => {
     try {
         console.log('shoptest');
         const kashShopId = String(req.query.kash_shop_id || "").trim();
-        const tokenData = await getTokenFromPhp(kashShopId);
+        const tokenData = await getValidTokenFromPhp(kashShopId);
 
         const data = await shopifyGraphQL(
             tokenData.shop,
@@ -525,11 +880,11 @@ app.get("/api/customers", requireProxyKey, async (req, res) => {
             return res.status(400).json({ error: "kash_shop_id invalide" });
         }
 
-        const tokenData = await getTokenFromPhp(kashShopId);
+        const tokenData = await getValidTokenFromPhp(kashShopId);
 
         if (!tokenData || !tokenData.access_token || !tokenData.shop) {
             return res.status(401).json({
-                error: "Boutique non connectée",
+                error: "Boutique non connectÃ©e",
                 connect_url: `${PUBLIC_BASE_URL}/auth/start`
             });
         }
